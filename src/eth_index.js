@@ -14,8 +14,6 @@ import IdMapping from "./id_mapping";
 import { EventEmitter } from "events";
 import isUtf8 from "isutf8";
 import { TypedDataUtils } from "eth-sig-util";
-import { TypedDataUtils as CfxTypedDataUtils } from 'cfx-sig-util'
-import * as confluxJSSDK from 'js-conflux-sdk'
 
 class TrustWeb3Provider extends EventEmitter {
   constructor(config) {
@@ -27,7 +25,6 @@ class TrustWeb3Provider extends EventEmitter {
     this.wrapResults = new Map();
     this.isTrust = true;
     this.isDebug = !!config.isDebug;
-    this.isEthereum = !!config.isEthereum;
 
     this.emitConnect(config.chainId);
   }
@@ -37,21 +34,28 @@ class TrustWeb3Provider extends EventEmitter {
     this.address = lowerAddress;
     this.selectedAddress = lowerAddress;
     this.ready = !!address;
+    for (var i = 0; i < window.frames.length; i++) {
+      const frame = window.frames[i];
+      if (frame.ethereum && frame.ethereum.isTrust) {
+        frame.ethereum.address = lowerAddress;
+        frame.ethereum.ready = !!address;
+      }
+    }
   }
 
   setConfig(config) {
     this.setAddress(config.address);
 
     this.chainId = config.chainId;
-    this.networkVersion = config.chainId.toString(10);
     this.rpc = new RPCServer(config.rpcUrl);
+    this.isDebug = !!config.isDebug;
   }
 
   request(payload) {
     // this points to window in methods like web3.eth.getAccounts()
     var that = this;
     if (!(this instanceof TrustWeb3Provider)) {
-      that = this.isEthereum ? window.ethereum : window.conflux;
+      that = window.ethereum;
     }
     return that._request(payload, false);
   }
@@ -67,6 +71,9 @@ class TrustWeb3Provider extends EventEmitter {
    * @deprecated Use request({method: "eth_requestAccounts"}) instead.
    */
   enable() {
+    console.log(
+      'enable() is deprecated, please use window.ethereum.request({method: "eth_requestAccounts"}) instead.'
+    );
     return this.request({ method: "eth_requestAccounts", params: [] });
   }
 
@@ -77,18 +84,15 @@ class TrustWeb3Provider extends EventEmitter {
     let response = { jsonrpc: "2.0", id: payload.id };
     switch (payload.method) {
       case "eth_accounts":
-      case "cfx_accounts":
         response.result = this.eth_accounts();
         break;
       case "eth_coinbase":
-      case "cfx_coinbase":
         response.result = this.eth_coinbase();
         break;
       case "net_version":
         response.result = this.net_version();
         break;
       case "eth_chainId":
-      case "cfx_chainId":
         response.result = this.eth_chainId();
         break;
       default:
@@ -104,10 +108,13 @@ class TrustWeb3Provider extends EventEmitter {
    * @deprecated Use request() method instead.
    */
   sendAsync(payload, callback) {
+    console.log(
+      "sendAsync(data, callback) is deprecated, please use window.ethereum.request(data) instead."
+    );
     // this points to window in methods like web3.eth.getAccounts()
     var that = this;
     if (!(this instanceof TrustWeb3Provider)) {
-      that = this.isEthereum ? window.ethereum : window.conflux;
+      that = window.ethereum;
     }
     if (Array.isArray(payload)) {
       Promise.all(payload.map(that._request.bind(that)))
@@ -144,42 +151,27 @@ class TrustWeb3Provider extends EventEmitter {
       window.myCallBack = this.callbacks.get(payload.id)
       switch (payload.method) {
         case "eth_accounts":
-        case "cfx_accounts":
           return this.sendResponse(payload.id, this.eth_accounts());
         case "eth_coinbase":
-        case "cfx_coinbase":
           return this.sendResponse(payload.id, this.eth_coinbase());
         case "net_version":
           return this.sendResponse(payload.id, this.net_version());
         case "eth_chainId":
-        case "cfx_chainId":
           return this.sendResponse(payload.id, this.eth_chainId());
         case "eth_sign":
-        case "cfx_sign":
-          window.myCallBack = this.callbacks.get(payload.id);
-          return this.eth_sign(payload);;
+          return this.eth_sign(payload);
         case "personal_sign":
-          window.myCallBack = this.callbacks.get(payload.id);
           return this.personal_sign(payload);
         case "personal_ecRecover":
           return this.personal_ecRecover(payload);
-        case "eth_signTypedData":
-        case "cfx_signTypedData":
-        case "cfx_signTypedData_v3":
         case "eth_signTypedData_v3":
-          window.myCallBack = this.callbacks.get(payload.id);
           return this.eth_signTypedData(payload, false);
+        case "eth_signTypedData":
         case "eth_signTypedData_v4":
-        case "cfx_signTypedData_v4":
-          window.myCallBack = this.callbacks.get(payload.id);
           return this.eth_signTypedData(payload, true);
         case "eth_sendTransaction":
-        case "cfx_sendTransaction":
-          window.myCallBack = this.callbacks.get(payload.id);
           return this.eth_sendTransaction(payload);
         case "eth_requestAccounts":
-        case "cfx_requestAccounts":
-          window.myCallBack = this.callbacks.get(payload.id);
           return this.eth_requestAccounts(payload);
         case "wallet_watchAsset":
           return this.wallet_watchAsset(payload);
@@ -264,9 +256,7 @@ class TrustWeb3Provider extends EventEmitter {
 
   eth_signTypedData(payload, useV4) {
     const message = JSON.parse(payload.params[1]);
-    const hash = this.isEthereum ?
-      TypedDataUtils.sign(message, useV4) :
-      CfxTypedDataUtils.sign(message, useV4);
+    const hash = TypedDataUtils.sign(message, useV4);
     this.postMessage("signTypedMessage", payload.id, {
       data: "0x" + hash.toString("hex"),
       raw: payload.params[1],
@@ -310,7 +300,7 @@ class TrustWeb3Provider extends EventEmitter {
         params: data,
       };
       // me-app js文件定义
-      window.postMessage(this.isEthereum, object);
+      window.postMessage(true, object);
     } else {
       // don't forget to verify in the app
       this.sendError(id, new ProviderRpcError(4100, "provider is not ready"));
@@ -323,8 +313,9 @@ class TrustWeb3Provider extends EventEmitter {
   sendResponse(id, result) {
     let originId = this.idMapping.tryPopId(id) || id;
     let callback = this.callbacks.get(id) ? this.callbacks.get(id) : window.myCallBack;
+    let wrapResult = this.wrapResults.get(id);
     let data = { jsonrpc: "2.0", id: originId };
-    if (result && typeof result === "object" && result.jsonrpc && result.result) {
+    if (typeof result === "object" && result.jsonrpc && result.result) {
       data.result = result.result;
     } else {
       data.result = result;
@@ -336,8 +327,23 @@ class TrustWeb3Provider extends EventEmitter {
         )}, data: ${JSON.stringify(data)}`
       );
     }
-    callback(null, data);
-    this.callbacks.delete(id);
+    if (callback) {
+      wrapResult ? callback(null, data) : callback(null, result);
+      this.callbacks.delete(id);
+    } else {
+      console.log(`callback id: ${id} not found`);
+      // check if it's iframe callback
+      for (var i = 0; i < window.frames.length; i++) {
+        const frame = window.frames[i];
+        try {
+          if (frame.ethereum.callbacks.has(id)) {
+            frame.ethereum.sendResponse(id, result);
+          }
+        } catch (error) {
+          console.log(`send response to frame error: ${error}`);
+        }
+      }
+    }
   }
 
   /**
@@ -351,27 +357,21 @@ class TrustWeb3Provider extends EventEmitter {
       this.callbacks.delete(id);
     }
   }
-
-  /**
-   * for conflux
-   */
-  async call(method, ...params) {
-    const data = { jsonrpc: '2.0', method, params };
-    return new Promise((resolve, reject) => {
-      this.sendAsync(data, (error, result) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(result.result);
-        }
-      });
-    });
-  }
 }
 
-window.Web3 = Web3;
-window.TrustWeb3Provider = TrustWeb3Provider;
-window.ConfluxJSSDK = confluxJSSDK;
+var config = {
+  address: addressHex,
+  chainId: chainId,
+  rpcUrl: rpcURL,
+  isDebug: true,
+};
+var ethProvider = new TrustWeb3Provider(config);
+ethProvider.isMetaMask = true
+ethProvider._metamask = { isUnlocked: () => Promise.resolve(true) }
+window.ethereum = ethProvider;
+window.ethereum.on = () => { };
+window.web3 = new Web3(ethProvider);
+window.web3.eth.defaultAccount = config.address;
 window.chrome = {
   webstore: {}
 };

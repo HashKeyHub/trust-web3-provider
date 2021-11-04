@@ -7,7 +7,9 @@
     "dist": "../android/lib/src/main/res/raw/"
   },
   "scripts": {
-    "build": "rm -rf ../dist && parcel build index.js --no-source-maps -o trust-min.js -d ../dist",
+    "build:me-provider": "rm -rf ../dist/provider.js && parcel build index.js --no-source-maps -o provider.js -d ../dist",
+    "build:me-eth": "rm -rf ../dist/ethereum.js && parcel build eth_index.js --no-source-maps -o ethereum.js -d ../dist",
+    "build:me-cfx": "rm -rf ../dist/conflux.js && parcel build cfx_index.js --no-source-maps -o conflux.js -d ../dist",
     "build:android": "rm -rf $npm_package_android_dist/trust.js && mkdir -pv $npm_package_android_dist && parcel build index.js --no-source-maps -o trust.js -d $npm_package_android_dist",
     "watch": "rm -rf ../dist && parcel watch index.js -o trust-min.js -d ../dist",
     "lint": "eslint . --fix",
@@ -25,7 +27,9 @@
     "eth-sig-util": "^3.0.1",
     "events": "^3.2.0",
     "isutf8": "^3.1.1",
-    "web3": "^0.20.7"
+    "web3": "^0.20.7",
+    "cfx-sig-util": "^2.1.2",
+    "js-conflux-sdk": "1.5.11"
   },
   "devDependencies": {
     "babel-core": "^6.26.3",

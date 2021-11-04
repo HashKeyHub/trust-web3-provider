@@ -6,18 +6,16 @@
 
 "use strict";
 
-import Web3 from "web3";
 import RPCServer from "./rpc";
 import ProviderRpcError from "./error";
 import Utils from "./utils";
 import IdMapping from "./id_mapping";
 import { EventEmitter } from "events";
 import isUtf8 from "isutf8";
-import { TypedDataUtils } from "eth-sig-util";
-import { TypedDataUtils as CfxTypedDataUtils } from 'cfx-sig-util'
+import { TypedDataUtils } from 'cfx-sig-util'
 import * as confluxJSSDK from 'js-conflux-sdk'
 
-class TrustWeb3Provider extends EventEmitter {
+class ConfluxPortalProvider extends EventEmitter {
   constructor(config) {
     super();
     this.setConfig(config);
@@ -27,7 +25,6 @@ class TrustWeb3Provider extends EventEmitter {
     this.wrapResults = new Map();
     this.isTrust = true;
     this.isDebug = !!config.isDebug;
-    this.isEthereum = !!config.isEthereum;
 
     this.emitConnect(config.chainId);
   }
@@ -37,6 +34,13 @@ class TrustWeb3Provider extends EventEmitter {
     this.address = lowerAddress;
     this.selectedAddress = lowerAddress;
     this.ready = !!address;
+    for (var i = 0; i < window.frames.length; i++) {
+      const frame = window.frames[i];
+      if (frame.ethereum && frame.ethereum.isTrust) {
+        frame.ethereum.address = lowerAddress;
+        frame.ethereum.ready = !!address;
+      }
+    }
   }
 
   setConfig(config) {
@@ -45,13 +49,14 @@ class TrustWeb3Provider extends EventEmitter {
     this.chainId = config.chainId;
     this.networkVersion = config.chainId.toString(10);
     this.rpc = new RPCServer(config.rpcUrl);
+    this.isDebug = !!config.isDebug;
   }
 
   request(payload) {
     // this points to window in methods like web3.eth.getAccounts()
     var that = this;
-    if (!(this instanceof TrustWeb3Provider)) {
-      that = this.isEthereum ? window.ethereum : window.conflux;
+    if (!(this instanceof ConfluxPortalProvider)) {
+      that = window.conflux;
     }
     return that._request(payload, false);
   }
@@ -67,6 +72,9 @@ class TrustWeb3Provider extends EventEmitter {
    * @deprecated Use request({method: "eth_requestAccounts"}) instead.
    */
   enable() {
+    console.log(
+      'enable() is deprecated, please use window.conflux.request({method: "eth_requestAccounts"}) instead.'
+    );
     return this.request({ method: "eth_requestAccounts", params: [] });
   }
 
@@ -104,10 +112,13 @@ class TrustWeb3Provider extends EventEmitter {
    * @deprecated Use request() method instead.
    */
   sendAsync(payload, callback) {
+    console.log(
+      "sendAsync(data, callback) is deprecated, please use window.conflux.request(data) instead."
+    );
     // this points to window in methods like web3.eth.getAccounts()
     var that = this;
-    if (!(this instanceof TrustWeb3Provider)) {
-      that = this.isEthereum ? window.ethereum : window.conflux;
+    if (!(this instanceof ConfluxPortalProvider)) {
+      that = window.conflux;
     }
     if (Array.isArray(payload)) {
       Promise.all(payload.map(that._request.bind(that)))
@@ -157,11 +168,12 @@ class TrustWeb3Provider extends EventEmitter {
         case "eth_sign":
         case "cfx_sign":
           window.myCallBack = this.callbacks.get(payload.id);
-          return this.eth_sign(payload);;
+          return this.eth_sign(payload);
         case "personal_sign":
           window.myCallBack = this.callbacks.get(payload.id);
           return this.personal_sign(payload);
         case "personal_ecRecover":
+          window.myCallBack = this.callbacks.get(payload.id);
           return this.personal_ecRecover(payload);
         case "eth_signTypedData":
         case "cfx_signTypedData":
@@ -181,12 +193,6 @@ class TrustWeb3Provider extends EventEmitter {
         case "cfx_requestAccounts":
           window.myCallBack = this.callbacks.get(payload.id);
           return this.eth_requestAccounts(payload);
-        case "wallet_watchAsset":
-          return this.wallet_watchAsset(payload);
-        case "wallet_addEthereumChain":
-          return this.wallet_addEthereumChain(payload);
-        case "wallet_switchEthereumChain":
-          return this.wallet_switchEthereumChain(payload);
         case "eth_newFilter":
         case "eth_newBlockFilter":
         case "eth_newPendingTransactionFilter":
@@ -264,9 +270,7 @@ class TrustWeb3Provider extends EventEmitter {
 
   eth_signTypedData(payload, useV4) {
     const message = JSON.parse(payload.params[1]);
-    const hash = this.isEthereum ?
-      TypedDataUtils.sign(message, useV4) :
-      CfxTypedDataUtils.sign(message, useV4);
+    const hash = TypedDataUtils.sign(message, useV4);
     this.postMessage("signTypedMessage", payload.id, {
       data: "0x" + hash.toString("hex"),
       raw: payload.params[1],
@@ -281,24 +285,6 @@ class TrustWeb3Provider extends EventEmitter {
     this.postMessage("requestAccounts", payload.id, {});
   }
 
-  wallet_watchAsset(payload) {
-    let options = payload.params.options;
-    this.postMessage("watchAsset", payload.id, {
-      type: payload.type,
-      contract: options.address,
-      symbol: options.symbol,
-      decimals: options.decimals || 0,
-    });
-  }
-
-  wallet_addEthereumChain(payload) {
-    this.postMessage("addEthereumChain", payload.id, payload.params[0]);
-  }
-
-  wallet_switchEthereumChain(payload) {
-    this.postMessage("switchEthereumChain", payload.id, payload.params[0]);
-  }
-
   /**
    * @private Internal js -> native message handler
    */
@@ -310,7 +296,7 @@ class TrustWeb3Provider extends EventEmitter {
         params: data,
       };
       // me-app js文件定义
-      window.postMessage(this.isEthereum, object);
+      window.postMessage(false, object);
     } else {
       // don't forget to verify in the app
       this.sendError(id, new ProviderRpcError(4100, "provider is not ready"));
@@ -323,8 +309,9 @@ class TrustWeb3Provider extends EventEmitter {
   sendResponse(id, result) {
     let originId = this.idMapping.tryPopId(id) || id;
     let callback = this.callbacks.get(id) ? this.callbacks.get(id) : window.myCallBack;
+    let wrapResult = this.wrapResults.get(id);
     let data = { jsonrpc: "2.0", id: originId };
-    if (result && typeof result === "object" && result.jsonrpc && result.result) {
+    if (typeof result === "object" && result.jsonrpc && result.result) {
       data.result = result.result;
     } else {
       data.result = result;
@@ -336,8 +323,23 @@ class TrustWeb3Provider extends EventEmitter {
         )}, data: ${JSON.stringify(data)}`
       );
     }
-    callback(null, data);
-    this.callbacks.delete(id);
+    if (callback) {
+      wrapResult ? callback(null, data) : callback(null, result);
+      this.callbacks.delete(id);
+    } else {
+      console.log(`callback id: ${id} not found`);
+      // check if it's iframe callback
+      for (var i = 0; i < window.frames.length; i++) {
+        const frame = window.frames[i];
+        try {
+          if (frame.ethereum.callbacks.has(id)) {
+            frame.ethereum.sendResponse(id, result);
+          }
+        } catch (error) {
+          console.log(`send response to frame error: ${error}`);
+        }
+      }
+    }
   }
 
   /**
@@ -352,9 +354,6 @@ class TrustWeb3Provider extends EventEmitter {
     }
   }
 
-  /**
-   * for conflux
-   */
   async call(method, ...params) {
     const data = { jsonrpc: '2.0', method, params };
     return new Promise((resolve, reject) => {
@@ -369,9 +368,20 @@ class TrustWeb3Provider extends EventEmitter {
   }
 }
 
-window.Web3 = Web3;
-window.TrustWeb3Provider = TrustWeb3Provider;
-window.ConfluxJSSDK = confluxJSSDK;
-window.chrome = {
-  webstore: {}
+var cfxConfig = {
+  address: cfxAddressHex,
+  chainId: cfxNetworkId,
+  rpcUrl: cfxRpcUrl,
+  isDebug: true,
 };
+var cfxProvider = new ConfluxPortalProvider(cfxConfig);
+cfxProvider.isConfluxPortal = true;
+window.conflux = cfxProvider;
+window.conflux.on = () => { };
+window.ConfluxJSSDK = confluxJSSDK;
+window.confluxJS = new confluxJSSDK.Conflux({
+  url: cfxConfig.rpcUrl,
+  networkId: cfxConfig.chainId
+});
+window.confluxJS.provider = cfxProvider;
+window.confluxJS.defaultAccount = cfxConfig.address;
