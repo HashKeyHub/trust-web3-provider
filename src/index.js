@@ -25,7 +25,7 @@ class TrustWeb3Provider extends EventEmitter {
     this.idMapping = new IdMapping();
     this.callbacks = new Map();
     this.wrapResults = new Map();
-    this.isTrust = true;
+    // this.isTrust = true;
     this.isDebug = !!config.isDebug;
     this.isEthereum = !!config.isEthereum;
 
@@ -323,6 +323,7 @@ class TrustWeb3Provider extends EventEmitter {
   sendResponse(id, result) {
     let originId = this.idMapping.tryPopId(id) || id;
     let callback = this.callbacks.get(id) ? this.callbacks.get(id) : window.myCallBack;
+    let wrapResult = this.wrapResults.get(id);
     let data = { jsonrpc: "2.0", id: originId };
     if (result && typeof result === "object" && result.jsonrpc && result.result) {
       data.result = result.result;
@@ -336,7 +337,7 @@ class TrustWeb3Provider extends EventEmitter {
         )}, data: ${JSON.stringify(data)}`
       );
     }
-    callback(null, data);
+    wrapResult ? callback(null, data) : callback(null, result) ;
     this.callbacks.delete(id);
   }
 

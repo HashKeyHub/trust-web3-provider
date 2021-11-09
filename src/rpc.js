@@ -37,7 +37,11 @@ class RPCServer {
     .then(response => response.json())
     .then(json => {
       if (!json.result && json.error) {
-        console.log("<== rpc error", json.error);
+        if(typeof json.error == "object"){
+          console.log("<== rpc error", JSON.stringify(json.error));
+        } else {
+          console.log("<== rpc error", json.error);
+        }
         throw new Error(json.error.message || "rpc error");
       }
       return json;
