@@ -22,7 +22,6 @@ class ConfluxPortalProvider extends EventEmitter {
 
     this.idMapping = new IdMapping();
     this.callbacks = new Map();
-    this.wrapResults = new Map();
     this.isTrust = true;
     this.isDebug = !!config.isDebug;
 
@@ -34,13 +33,6 @@ class ConfluxPortalProvider extends EventEmitter {
     this.address = lowerAddress;
     this.selectedAddress = lowerAddress;
     this.ready = !!address;
-    for (var i = 0; i < window.frames.length; i++) {
-      const frame = window.frames[i];
-      if (frame.ethereum && frame.ethereum.isTrust) {
-        frame.ethereum.address = lowerAddress;
-        frame.ethereum.ready = !!address;
-      }
-    }
   }
 
   setConfig(config) {
@@ -58,7 +50,7 @@ class ConfluxPortalProvider extends EventEmitter {
     if (!(this instanceof ConfluxPortalProvider)) {
       that = window.conflux;
     }
-    return that._request(payload, false);
+    return that._request(payload);
   }
 
   /**
@@ -135,7 +127,7 @@ class ConfluxPortalProvider extends EventEmitter {
   /**
    * @private Internal rpc handler
    */
-  _request(payload, wrapResult = true) {
+  _request(payload) {
     this.idMapping.tryIntifyId(payload);
     if (this.isDebug) {
       console.log(`==> _request payload ${JSON.stringify(payload)}`);
@@ -151,7 +143,6 @@ class ConfluxPortalProvider extends EventEmitter {
           resolve(data);
         }
       });
-      this.wrapResults.set(payload.id, wrapResult);
       window.myCallBack = this.callbacks.get(payload.id)
       switch (payload.method) {
         case "eth_accounts":
@@ -205,14 +196,13 @@ class ConfluxPortalProvider extends EventEmitter {
         default:
           // call upstream rpc
           this.callbacks.delete(payload.id);
-          this.wrapResults.delete(payload.id);
           return this.rpc
             .call(payload)
             .then((response) => {
               if (this.isDebug) {
                 console.log(`<== rpc response ${JSON.stringify(response)}`);
               }
-              wrapResult ? resolve(response) : resolve(response.result);
+              resolve(response);
             })
             .catch(reject);
       }
@@ -306,12 +296,11 @@ class ConfluxPortalProvider extends EventEmitter {
   /**
    * @private Internal native result -> js
    */
-  sendResponse(id, result) {
+  sendResponse(id, result, method = '') {
     let originId = this.idMapping.tryPopId(id) || id;
     let callback = this.callbacks.get(id) ? this.callbacks.get(id) : window.myCallBack;
-    let wrapResult = this.wrapResults.get(id);
     let data = { jsonrpc: "2.0", id: originId };
-    if (typeof result === "object" && result.jsonrpc && result.result) {
+    if (result && typeof result === "object" && result.jsonrpc && result.result) {
       data.result = result.result;
     } else {
       data.result = result;
@@ -324,22 +313,11 @@ class ConfluxPortalProvider extends EventEmitter {
       );
     }
     if (callback) {
-      wrapResult ? callback(null, data) : callback(null, result);
-      this.callbacks.delete(id);
+      method == "requestAccounts" ? callback(null, result) : callback(null, data);
     } else {
       console.log(`callback id: ${id} not found`);
-      // check if it's iframe callback
-      for (var i = 0; i < window.frames.length; i++) {
-        const frame = window.frames[i];
-        try {
-          if (frame.ethereum.callbacks.has(id)) {
-            frame.ethereum.sendResponse(id, result);
-          }
-        } catch (error) {
-          console.log(`send response to frame error: ${error}`);
-        }
-      }
     }
+    this.callbacks.delete(id);
   }
 
   /**

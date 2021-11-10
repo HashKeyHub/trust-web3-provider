@@ -24,11 +24,11 @@ class TrustWeb3Provider extends EventEmitter {
 
     this.idMapping = new IdMapping();
     this.callbacks = new Map();
-    this.wrapResults = new Map();
-    // this.isTrust = true;
     this.isDebug = !!config.isDebug;
     this.isEthereum = !!config.isEthereum;
-
+    if (this.isEthereum) {
+      this.wrapResults = new Map();
+    }
     this.emitConnect(config.chainId);
   }
 
@@ -67,6 +67,9 @@ class TrustWeb3Provider extends EventEmitter {
    * @deprecated Use request({method: "eth_requestAccounts"}) instead.
    */
   enable() {
+    if (this.isDebug) {
+      console.log('enable() use')
+    }
     return this.request({ method: "eth_requestAccounts", params: [] });
   }
 
@@ -74,6 +77,9 @@ class TrustWeb3Provider extends EventEmitter {
    * @deprecated Use request() method instead.
    */
   send(payload) {
+    if (this.isDebug) {
+      console.log('send payload ' + JSON.stringify(payload))
+    }
     let response = { jsonrpc: "2.0", id: payload.id };
     switch (payload.method) {
       case "eth_accounts":
@@ -140,8 +146,9 @@ class TrustWeb3Provider extends EventEmitter {
           resolve(data);
         }
       });
-      this.wrapResults.set(payload.id, wrapResult);
-      window.myCallBack = this.callbacks.get(payload.id)
+      if (this.isEthereum) {
+        this.wrapResults.set(payload.id, wrapResult);
+      }
       switch (payload.method) {
         case "eth_accounts":
         case "cfx_accounts":
@@ -156,30 +163,31 @@ class TrustWeb3Provider extends EventEmitter {
           return this.sendResponse(payload.id, this.eth_chainId());
         case "eth_sign":
         case "cfx_sign":
-          window.myCallBack = this.callbacks.get(payload.id);
-          return this.eth_sign(payload);;
+          this.setMyCallBack(payload.id);
+          return this.eth_sign(payload);
         case "personal_sign":
-          window.myCallBack = this.callbacks.get(payload.id);
+          this.setMyCallBack(payload.id);
           return this.personal_sign(payload);
         case "personal_ecRecover":
+          this.setMyCallBack(payload.id);
           return this.personal_ecRecover(payload);
         case "eth_signTypedData":
         case "cfx_signTypedData":
         case "cfx_signTypedData_v3":
         case "eth_signTypedData_v3":
-          window.myCallBack = this.callbacks.get(payload.id);
+          this.setMyCallBack(payload.id);
           return this.eth_signTypedData(payload, false);
         case "eth_signTypedData_v4":
         case "cfx_signTypedData_v4":
-          window.myCallBack = this.callbacks.get(payload.id);
+          this.setMyCallBack(payload.id);
           return this.eth_signTypedData(payload, true);
         case "eth_sendTransaction":
         case "cfx_sendTransaction":
-          window.myCallBack = this.callbacks.get(payload.id);
+          this.setMyCallBack(payload.id);
           return this.eth_sendTransaction(payload);
         case "eth_requestAccounts":
         case "cfx_requestAccounts":
-          window.myCallBack = this.callbacks.get(payload.id);
+          this.setMyCallBack(payload.id);
           return this.eth_requestAccounts(payload);
         case "wallet_watchAsset":
           return this.wallet_watchAsset(payload);
@@ -199,18 +207,37 @@ class TrustWeb3Provider extends EventEmitter {
         default:
           // call upstream rpc
           this.callbacks.delete(payload.id);
-          this.wrapResults.delete(payload.id);
+          if (this.isEthereum) {
+            this.wrapResults.delete(payload.id);
+          }
           return this.rpc
             .call(payload)
             .then((response) => {
               if (this.isDebug) {
                 console.log(`<== rpc response ${JSON.stringify(response)}`);
               }
-              wrapResult ? resolve(response) : resolve(response.result);
+              if (this.isEthereum) {
+                wrapResult ? resolve(response) : resolve(response.result);
+              } else {
+                resolve(response)
+              }
             })
             .catch(reject);
+
       }
     });
+  }
+
+  setMyCallBack(id) {
+    if (this.isEthereum) {
+      window.myCallBack1 = this.callbacks.get(id);
+    } else {
+      window.myCallBack2 = this.callbacks.get(id);
+    }
+  }
+
+  getMyCallBack() {
+    return this.isEthereum ? window.myCallBack1 : window.myCallBack2;
   }
 
   emitConnect(chainId) {
@@ -320,10 +347,9 @@ class TrustWeb3Provider extends EventEmitter {
   /**
    * @private Internal native result -> js
    */
-  sendResponse(id, result) {
+  sendResponse(id, result, method = '') {
     let originId = this.idMapping.tryPopId(id) || id;
-    let callback = this.callbacks.get(id) ? this.callbacks.get(id) : window.myCallBack;
-    let wrapResult = this.wrapResults.get(id);
+    let callback = this.callbacks.get(id) ? this.callbacks.get(id) : this.getMyCallBack();
     let data = { jsonrpc: "2.0", id: originId };
     if (result && typeof result === "object" && result.jsonrpc && result.result) {
       data.result = result.result;
@@ -337,7 +363,15 @@ class TrustWeb3Provider extends EventEmitter {
         )}, data: ${JSON.stringify(data)}`
       );
     }
-    wrapResult ? callback(null, data) : callback(null, result) ;
+    if (callback) {
+      if (this.isEthereum) {
+        var wrapResult = this.wrapResults.get(id);
+        wrapResult ? callback(null, data) : callback(null, result)
+        this.wrapResults.delete(id)
+      } else {
+        method == "requestAccounts" ? callback(null, result) : callback(null, data);
+      }
+    }
     this.callbacks.delete(id);
   }
 
@@ -346,9 +380,9 @@ class TrustWeb3Provider extends EventEmitter {
    */
   sendError(id, error) {
     console.log(`<== ${id} sendError ${error}`);
-    let callback = this.callbacks.get(id) ? this.callbacks.get(id) : window.myCallBack;
+    let callback = this.callbacks.get(id) ? this.callbacks.get(id) : this.getMyCallBack();
     if (callback) {
-      callback(error instanceof Error ? error : new Error(error ? error : ""), null);
+      callback(error instanceof Error ? error : new Error(error ? error : "error is undefined"), null);
       this.callbacks.delete(id);
     }
   }
