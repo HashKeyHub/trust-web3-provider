@@ -6,8 +6,6 @@
 
 "use strict";
 
-import Utils from "./utils";
-
 class IdMapping {
   constructor() {
     this.intIds = new Map;
@@ -15,11 +13,11 @@ class IdMapping {
 
   tryIntifyId(payload) {
     if (!payload.id) {
-      payload.id = Utils.genId();
+      payload.id = this.genId();
       return;
     }
     if (typeof payload.id !== "number") {
-      let newId = Utils.genId();
+      let newId = genId();
       this.intIds.set(newId, payload.id);
       payload.id = newId;
     }
@@ -39,6 +37,11 @@ class IdMapping {
     }
     return originId;
   }
+
+  genId() {
+    return new Date().getTime() + Math.floor(Math.random() * 1000);
+  }
+
 }
 
 module.exports = IdMapping;

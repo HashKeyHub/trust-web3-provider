@@ -6,16 +6,18 @@
 
 "use strict";
 
+if (typeof BigInt === 'undefined') global.BigInt = require('big-integer')
+if (typeof CfxSinUtil === 'undefined') global.CfxSinUtil = require('cfx-sig-util')
+
 import Web3 from "web3";
 import RPCServer from "./rpc";
 import ProviderRpcError from "./error";
-import Utils from "./utils";
 import IdMapping from "./id_mapping";
 import { EventEmitter } from "events";
 import isUtf8 from "isutf8";
 import { TypedDataUtils } from "eth-sig-util";
-import { TypedDataUtils as CfxTypedDataUtils } from 'cfx-sig-util'
-import * as confluxJSSDK from 'js-conflux-sdk'
+import * as confluxJSSDK from 'js-conflux-sdk';
+import { Buffer } from "buffer";
 
 class TrustWeb3Provider extends EventEmitter {
   constructor(config) {
@@ -137,7 +139,7 @@ class TrustWeb3Provider extends EventEmitter {
     }
     return new Promise((resolve, reject) => {
       if (!payload.id) {
-        payload.id = Utils.genId();
+        payload.id = this.genId();
       }
       this.callbacks.set(payload.id, (error, data) => {
         if (error) {
@@ -261,8 +263,8 @@ class TrustWeb3Provider extends EventEmitter {
   }
 
   eth_sign(payload) {
-    const buffer = Utils.messageToBuffer(payload.params[1]);
-    const hex = Utils.bufferToHex(buffer);
+    const buffer = this.messageToBuffer(payload.params[1]);
+    const hex = this.bufferToHex(buffer);
     if (isUtf8(buffer)) {
       this.postMessage("signPersonalMessage", payload.id, { data: hex });
     } else {
@@ -272,10 +274,10 @@ class TrustWeb3Provider extends EventEmitter {
 
   personal_sign(payload) {
     const message = payload.params[0];
-    const buffer = Utils.messageToBuffer(message);
+    const buffer = this.messageToBuffer(message);
     if (buffer.length === 0) {
       // hex it
-      const hex = Utils.bufferToHex(message);
+      const hex = this.bufferToHex(message);
       this.postMessage("signPersonalMessage", payload.id, { data: hex });
     } else {
       this.postMessage("signPersonalMessage", payload.id, { data: message });
@@ -293,7 +295,7 @@ class TrustWeb3Provider extends EventEmitter {
     const message = JSON.parse(payload.params[1]);
     const hash = this.isEthereum ?
       TypedDataUtils.sign(message, useV4) :
-      CfxTypedDataUtils.sign(message, useV4);
+      CfxSinUtil.TypedDataUtils.sign(message, useV4);
     this.postMessage("signTypedMessage", payload.id, {
       data: "0x" + hash.toString("hex"),
       raw: payload.params[1],
@@ -401,6 +403,28 @@ class TrustWeb3Provider extends EventEmitter {
         }
       });
     });
+  }
+
+  messageToBuffer(message) {
+    var buffer = Buffer.from([]);
+    try {
+      if ((typeof (message) === "string")) {
+        buffer = Buffer.from(message.replace("0x", ""), "hex");
+      } else {
+        buffer = Buffer.from(message);
+      }
+    } catch (err) {
+      console.log(`messageToBuffer error: ${err}`);
+    }
+    return buffer;
+  }
+
+  bufferToHex(buf) {
+    return "0x" + Buffer.from(buf).toString("hex");
+  }
+
+  genId() {
+    return new Date().getTime() + Math.floor(Math.random() * 1000);
   }
 }
 
