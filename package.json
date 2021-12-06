@@ -12,10 +12,7 @@
     "lint": "eslint . --fix",
     "test": "jest",
     "build": "webpack --mode production",
-    "build-dev": "webpack -d --mode development",
-    "rm1": "rm -rf /Users/fujianlian/Desktop/Me-app/lib/blockchain/browser/dapp/main.js",
-    "mv1": "mv /Users/fujianlian/Desktop/trust-web3-provider/dist/main.js /Users/fujianlian/Desktop/Me-app/lib/blockchain/browser/dapp",
-    "build1": "npm run rm1 && npm run build && npm run mv1"
+    "build-dev": "webpack -d --mode development"
   },
   "repository": {
     "type": "git",
@@ -29,11 +26,11 @@
     "big-integer": "^1.6.51",
     "buffer": "^5.6.0",
     "cfx-sig-util": "^2.1.2",
-    "eth-sig-util": "^1.4.2",
+    "eth-sig-util": "^3.0.1",
     "events": "^3.2.0",
     "isutf8": "^3.1.1",
     "js-conflux-sdk": "1.5.11",
-    "web3": "0.20.6"
+    "web3": "^0.20.7"
   },
   "devDependencies": {
     "babel-core": "^6.26.3",
