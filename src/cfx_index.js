@@ -21,8 +21,7 @@ class ConfluxPortalProvider extends EventEmitter {
     this.setConfig(config);
 
     this.idMapping = new IdMapping();
-    this.callbacks = new Map();
-    this.isTrust = true;
+    window.callbacks = new Map();
     this.isDebug = !!config.isDebug;
 
     this.emitConnect(config.chainId);
@@ -136,14 +135,14 @@ class ConfluxPortalProvider extends EventEmitter {
       if (!payload.id) {
         payload.id = Utils.genId();
       }
-      this.callbacks.set(payload.id, (error, data) => {
+      window.callbacks.set(payload.id, (error, data) => {
         if (error) {
           reject(error);
         } else {
           resolve(data);
         }
       });
-      window.myCallBack = this.callbacks.get(payload.id)
+      window.myCallBack = window.callbacks.get(payload.id)
       switch (payload.method) {
         case "eth_accounts":
         case "cfx_accounts":
@@ -158,31 +157,31 @@ class ConfluxPortalProvider extends EventEmitter {
           return this.sendResponse(payload.id, this.eth_chainId());
         case "eth_sign":
         case "cfx_sign":
-          window.myCallBack = this.callbacks.get(payload.id);
+          window.myCallBack = window.callbacks.get(payload.id);
           return this.eth_sign(payload);
         case "personal_sign":
-          window.myCallBack = this.callbacks.get(payload.id);
+          window.myCallBack = window.callbacks.get(payload.id);
           return this.personal_sign(payload);
         case "personal_ecRecover":
-          window.myCallBack = this.callbacks.get(payload.id);
+          window.myCallBack = window.callbacks.get(payload.id);
           return this.personal_ecRecover(payload);
         case "eth_signTypedData":
         case "cfx_signTypedData":
         case "cfx_signTypedData_v3":
         case "eth_signTypedData_v3":
-          window.myCallBack = this.callbacks.get(payload.id);
+          window.myCallBack = window.callbacks.get(payload.id);
           return this.eth_signTypedData(payload, false);
         case "eth_signTypedData_v4":
         case "cfx_signTypedData_v4":
-          window.myCallBack = this.callbacks.get(payload.id);
+          window.myCallBack = window.callbacks.get(payload.id);
           return this.eth_signTypedData(payload, true);
         case "eth_sendTransaction":
         case "cfx_sendTransaction":
-          window.myCallBack = this.callbacks.get(payload.id);
+          window.myCallBack = window.callbacks.get(payload.id);
           return this.eth_sendTransaction(payload);
         case "eth_requestAccounts":
         case "cfx_requestAccounts":
-          window.myCallBack = this.callbacks.get(payload.id);
+          window.myCallBack = window.callbacks.get(payload.id);
           return this.eth_requestAccounts(payload);
         case "eth_newFilter":
         case "eth_newBlockFilter":
@@ -195,7 +194,7 @@ class ConfluxPortalProvider extends EventEmitter {
           );
         default:
           // call upstream rpc
-          this.callbacks.delete(payload.id);
+          window.callbacks.delete(payload.id);
           return this.rpc
             .call(payload)
             .then((response) => {
@@ -298,7 +297,7 @@ class ConfluxPortalProvider extends EventEmitter {
    */
   sendResponse(id, result, method = '') {
     let originId = this.idMapping.tryPopId(id) || id;
-    let callback = this.callbacks.get(id) ? this.callbacks.get(id) : window.myCallBack;
+    let callback = window.callbacks.get(id) ? window.callbacks.get(id) : window.myCallBack;
     let data = { jsonrpc: "2.0", id: originId };
     if (result && typeof result === "object" && result.jsonrpc && result.result) {
       data.result = result.result;
@@ -317,7 +316,7 @@ class ConfluxPortalProvider extends EventEmitter {
     } else {
       console.log(`callback id: ${id} not found`);
     }
-    this.callbacks.delete(id);
+    window.callbacks.delete(id);
   }
 
   /**
@@ -325,10 +324,10 @@ class ConfluxPortalProvider extends EventEmitter {
    */
   sendError(id, error) {
     console.log(`<== ${id} sendError ${error}`);
-    let callback = this.callbacks.get(id) ? this.callbacks.get(id) : window.myCallBack;
+    let callback = window.callbacks.get(id) ? window.callbacks.get(id) : window.myCallBack;
     if (callback) {
       callback(error instanceof Error ? error : new Error(error ? error : ""), null);
-      this.callbacks.delete(id);
+      window.callbacks.delete(id);
     }
   }
 

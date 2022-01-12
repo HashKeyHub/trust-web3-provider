@@ -21,9 +21,8 @@ class TrustWeb3Provider extends EventEmitter {
     this.setConfig(config);
 
     this.idMapping = new IdMapping();
-    this.callbacks = new Map();
-    this.wrapResults = new Map();
-    this.isTrust = true;
+    window.callbacks = new Map();
+    window.wrapResults = new Map();
     this.isDebug = !!config.isDebug;
 
     this.emitConnect(config.chainId);
@@ -140,15 +139,15 @@ class TrustWeb3Provider extends EventEmitter {
       if (!payload.id) {
         payload.id = Utils.genId();
       }
-      this.callbacks.set(payload.id, (error, data) => {
+      window.callbacks.set(payload.id, (error, data) => {
         if (error) {
           reject(error);
         } else {
           resolve(data);
         }
       });
-      this.wrapResults.set(payload.id, wrapResult);
-      window.myCallBack = this.callbacks.get(payload.id)
+      window.wrapResults.set(payload.id, wrapResult);
+      window.myCallBack = window.callbacks.get(payload.id)
       switch (payload.method) {
         case "eth_accounts":
           return this.sendResponse(payload.id, this.eth_accounts());
@@ -190,8 +189,8 @@ class TrustWeb3Provider extends EventEmitter {
           );
         default:
           // call upstream rpc
-          this.callbacks.delete(payload.id);
-          this.wrapResults.delete(payload.id);
+          window.callbacks.delete(payload.id);
+          window.wrapResults.delete(payload.id);
           return this.rpc
             .call(payload)
             .then((response) => {
@@ -312,8 +311,8 @@ class TrustWeb3Provider extends EventEmitter {
    */
   sendResponse(id, result) {
     let originId = this.idMapping.tryPopId(id) || id;
-    let callback = this.callbacks.get(id) ? this.callbacks.get(id) : window.myCallBack;
-    let wrapResult = this.wrapResults.get(id);
+    let callback = window.callbacks.get(id) ? window.callbacks.get(id) : window.myCallBack;
+    let wrapResult = window.wrapResults.get(id);
     let data = { jsonrpc: "2.0", id: originId };
     if (typeof result === "object" && result.jsonrpc && result.result) {
       data.result = result.result;
@@ -329,7 +328,7 @@ class TrustWeb3Provider extends EventEmitter {
     }
     if (callback) {
       wrapResult ? callback(null, data) : callback(null, result);
-      this.callbacks.delete(id);
+      window.callbacks.delete(id);
     } else {
       console.log(`callback id: ${id} not found`);
       // check if it's iframe callback
@@ -351,10 +350,10 @@ class TrustWeb3Provider extends EventEmitter {
    */
   sendError(id, error) {
     console.log(`<== ${id} sendError ${error}`);
-    let callback = this.callbacks.get(id) ? this.callbacks.get(id) : window.myCallBack;
+    let callback = window.callbacks.get(id) ? window.callbacks.get(id) : window.myCallBack;
     if (callback) {
       callback(error instanceof Error ? error : new Error(error ? error : ""), null);
-      this.callbacks.delete(id);
+      window.callbacks.delete(id);
     }
   }
 }
