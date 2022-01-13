@@ -23,13 +23,14 @@ class TrustWeb3Provider extends EventEmitter {
   constructor(config) {
     super();
     this.setConfig(config);
-
     this.idMapping = new IdMapping();
-    window.callbacks = new Map();
     this.isDebug = !!config.isDebug;
     this.isEthereum = !!config.isEthereum;
-    if (this.isEthereum) {
-      window.wrapResults = new Map();
+    if(!window.hashKeyMeCallbacks) {
+      window.hashKeyMeCallbacks = new Map(); 
+    }
+    if(!window.hashKeyMeWrapResults) {
+      window.hashKeyMeWrapResults = new Map(); 
     }
     this.emitConnect(config.chainId);
   }
@@ -141,16 +142,14 @@ class TrustWeb3Provider extends EventEmitter {
       if (!payload.id) {
         payload.id = this.genId();
       }
-      window.callbacks.set(payload.id, (error, data) => {
+      window.hashKeyMeCallbacks.set(payload.id, (error, data) => {
         if (error) {
           reject(error);
         } else {
           resolve(data);
         }
       });
-      if (this.isEthereum) {
-        window.wrapResults.set(payload.id, wrapResult);
-      }
+      window.hashKeyMeWrapResults.set(payload.id, wrapResult);
       switch (payload.method) {
         case "eth_accounts":
         case "cfx_accounts":
@@ -201,10 +200,8 @@ class TrustWeb3Provider extends EventEmitter {
           );
         default:
           // call upstream rpc
-          window.callbacks.delete(payload.id);
-          if (this.isEthereum) {
-            window.wrapResults.delete(payload.id);
-          }
+          window.hashKeyMeCallbacks.delete(payload.id);
+          window.hashKeyMeWrapResults.delete(payload.id);
           return this.rpc
             .call(payload)
             .then((response) => {
@@ -330,9 +327,9 @@ class TrustWeb3Provider extends EventEmitter {
   /**
    * @private Internal native result -> js
    */
-  sendResponse(id, result, method = '') {
+  sendResponse(id, result) {
     let originId = this.idMapping.tryPopId(id) || id;
-    let callback = window.callbacks.get(id);
+    let callback = window.hashKeyMeCallbacks.get(id);
     let data = { jsonrpc: "2.0", id: originId };
     if (result && typeof result === "object" && result.jsonrpc && result.result) {
       data.result = result.result;
@@ -347,14 +344,10 @@ class TrustWeb3Provider extends EventEmitter {
       );
     }
     if (callback) {
-      if (this.isEthereum) {
-        var wrapResult = window.wrapResults.get(id);
-        wrapResult ? callback(null, data) : callback(null, result)
-        window.wrapResults.delete(id)
-      } else {
-        method == "requestAccounts" ? callback(null, result) : callback(null, data);
-      }
-      window.callbacks.delete(id);
+      var wrapResult = window.hashKeyMeWrapResults.get(id);
+      wrapResult ? callback(null, data) : callback(null, result)
+      window.hashKeyMeWrapResults.delete(id)
+      window.hashKeyMeCallbacks.delete(id);
     } else {
       this.sendError(id, `callback id: ${id} not found`);
     }
@@ -365,10 +358,11 @@ class TrustWeb3Provider extends EventEmitter {
    */
   sendError(id, error) {
     console.log(`<== ${id} sendError ${error}`);
-    let callback = window.callbacks.get(id);
+    let callback = window.hashKeyMeCallbacks.get(id);
     if (callback) {
       callback(error instanceof Error ? error : new Error(error ? error : "error is undefined"), null);
-      window.callbacks.delete(id);
+      window.hashKeyMeCallbacks.delete(id);
+      window.hashKeyMeWrapResults.delete(id);
     }
   }
 

@@ -19,11 +19,14 @@ class ConfluxPortalProvider extends EventEmitter {
   constructor(config) {
     super();
     this.setConfig(config);
-
     this.idMapping = new IdMapping();
-    window.callbacks = new Map();
     this.isDebug = !!config.isDebug;
-
+    if(!window.hashKeyMeCallbacks) {
+      window.hashKeyMeCallbacks = new Map(); 
+    }
+    if(!window.hashKeyMeWrapResults) {
+      window.hashKeyMeWrapResults = new Map(); 
+    }
     this.emitConnect(config.chainId);
   }
 
@@ -49,7 +52,7 @@ class ConfluxPortalProvider extends EventEmitter {
     if (!(this instanceof ConfluxPortalProvider)) {
       that = window.conflux;
     }
-    return that._request(payload);
+    return that._request(payload, false);
   }
 
   /**
@@ -126,7 +129,7 @@ class ConfluxPortalProvider extends EventEmitter {
   /**
    * @private Internal rpc handler
    */
-  _request(payload) {
+  _request(payload, wrapResult = true) {
     this.idMapping.tryIntifyId(payload);
     if (this.isDebug) {
       console.log(`==> _request payload ${JSON.stringify(payload)}`);
@@ -135,14 +138,14 @@ class ConfluxPortalProvider extends EventEmitter {
       if (!payload.id) {
         payload.id = Utils.genId();
       }
-      window.callbacks.set(payload.id, (error, data) => {
+      window.hashKeyMeCallbacks.set(payload.id, (error, data) => {
         if (error) {
           reject(error);
         } else {
           resolve(data);
         }
       });
-      window.myCallBack = window.callbacks.get(payload.id)
+      window.hashKeyMeWrapResults.set(payload.id, wrapResult);
       switch (payload.method) {
         case "eth_accounts":
         case "cfx_accounts":
@@ -157,31 +160,24 @@ class ConfluxPortalProvider extends EventEmitter {
           return this.sendResponse(payload.id, this.eth_chainId());
         case "eth_sign":
         case "cfx_sign":
-          window.myCallBack = window.callbacks.get(payload.id);
           return this.eth_sign(payload);
         case "personal_sign":
-          window.myCallBack = window.callbacks.get(payload.id);
           return this.personal_sign(payload);
         case "personal_ecRecover":
-          window.myCallBack = window.callbacks.get(payload.id);
           return this.personal_ecRecover(payload);
         case "eth_signTypedData":
         case "cfx_signTypedData":
         case "cfx_signTypedData_v3":
         case "eth_signTypedData_v3":
-          window.myCallBack = window.callbacks.get(payload.id);
           return this.eth_signTypedData(payload, false);
         case "eth_signTypedData_v4":
         case "cfx_signTypedData_v4":
-          window.myCallBack = window.callbacks.get(payload.id);
           return this.eth_signTypedData(payload, true);
         case "eth_sendTransaction":
         case "cfx_sendTransaction":
-          window.myCallBack = window.callbacks.get(payload.id);
           return this.eth_sendTransaction(payload);
         case "eth_requestAccounts":
         case "cfx_requestAccounts":
-          window.myCallBack = window.callbacks.get(payload.id);
           return this.eth_requestAccounts(payload);
         case "eth_newFilter":
         case "eth_newBlockFilter":
@@ -194,7 +190,8 @@ class ConfluxPortalProvider extends EventEmitter {
           );
         default:
           // call upstream rpc
-          window.callbacks.delete(payload.id);
+          window.hashKeyMeCallbacks.delete(payload.id);
+          window.hashKeyMeWrapResults.delete(payload.id);
           return this.rpc
             .call(payload)
             .then((response) => {
@@ -295,9 +292,9 @@ class ConfluxPortalProvider extends EventEmitter {
   /**
    * @private Internal native result -> js
    */
-  sendResponse(id, result, method = '') {
+  sendResponse(id, result) {
     let originId = this.idMapping.tryPopId(id) || id;
-    let callback = window.callbacks.get(id) ? window.callbacks.get(id) : window.myCallBack;
+    let callback = window.hashKeyMeCallbacks.get(id);
     let data = { jsonrpc: "2.0", id: originId };
     if (result && typeof result === "object" && result.jsonrpc && result.result) {
       data.result = result.result;
@@ -312,22 +309,25 @@ class ConfluxPortalProvider extends EventEmitter {
       );
     }
     if (callback) {
-      method == "requestAccounts" ? callback(null, result) : callback(null, data);
+      var wrapResult = window.hashKeyMeWrapResults.get(id);
+      wrapResult ? callback(null, data) : callback(null, result)
+      window.hashKeyMeCallbacks.delete(id);
+      window.hashKeyMeWrapResults.delete(id)
     } else {
-      console.log(`callback id: ${id} not found`);
+      this.sendError(id, `callback id: ${id} not found`);
     }
-    window.callbacks.delete(id);
   }
 
   /**
    * @private Internal native error -> js
    */
-  sendError(id, error) {
+   sendError(id, error) {
     console.log(`<== ${id} sendError ${error}`);
-    let callback = window.callbacks.get(id) ? window.callbacks.get(id) : window.myCallBack;
+    let callback = window.hashKeyMeCallbacks.get(id);
     if (callback) {
-      callback(error instanceof Error ? error : new Error(error ? error : ""), null);
-      window.callbacks.delete(id);
+      callback(error instanceof Error ? error : new Error(error ? error : "error is undefined"), null);
+      window.hashKeyMeCallbacks.delete(id);
+      window.hashKeyMeWrapResults.delete(id)
     }
   }
 
