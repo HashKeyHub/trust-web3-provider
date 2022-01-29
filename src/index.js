@@ -26,11 +26,11 @@ class TrustWeb3Provider extends EventEmitter {
     this.idMapping = new IdMapping();
     this.isDebug = !!config.isDebug;
     this.isEthereum = !!config.isEthereum;
-    if(!window.hashKeyMeCallbacks) {
-      window.hashKeyMeCallbacks = new Map(); 
+    if (!window.hashKeyMeCallbacks) {
+      window.hashKeyMeCallbacks = new Map();
     }
-    if(!window.hashKeyMeWrapResults) {
-      window.hashKeyMeWrapResults = new Map(); 
+    if (!window.hashKeyMeWrapResults) {
+      window.hashKeyMeWrapResults = new Map();
     }
     this.emitConnect(config.chainId);
   }
@@ -44,13 +44,16 @@ class TrustWeb3Provider extends EventEmitter {
 
   setConfig(config) {
     this.setAddress(config.address);
-
-    this.chainId = config.chainId;
+    this.chainId = '0x' + config.chainId.toString(16);
     this.networkVersion = config.chainId.toString(10);
     this.rpc = new RPCServer(config.rpcUrl);
   }
 
   request(payload) {
+    if (this.isDebug) {
+      console.log('use request')
+    }
+
     // this points to window in methods like web3.eth.getAccounts()
     var that = this;
     if (!(this instanceof TrustWeb3Provider)) {
@@ -79,35 +82,49 @@ class TrustWeb3Provider extends EventEmitter {
   /**
    * @deprecated Use request() method instead.
    */
-  send(payload) {
+  async send(payload, callback) {
     if (this.isDebug) {
-      console.log('send payload ' + JSON.stringify(payload))
+      console.log('use send')
+      console.log('send ' + JSON.stringify(payload))
     }
-    let response = { jsonrpc: "2.0", id: payload.id };
-    switch (payload.method) {
-      case "eth_accounts":
-      case "cfx_accounts":
-        response.result = this.eth_accounts();
-        break;
-      case "eth_coinbase":
-      case "cfx_coinbase":
-        response.result = this.eth_coinbase();
-        break;
-      case "net_version":
-        response.result = this.net_version();
-        break;
-      case "eth_chainId":
-      case "cfx_chainId":
-        response.result = this.eth_chainId();
-        break;
-      default:
-        throw new ProviderRpcError(
-          4200,
-          `Trust does not support calling ${payload.method} synchronously without a callback. Please provide a callback parameter to call ${payload.method} asynchronously.`
-        );
+
+    if (callback) {
+      this.sendAsync(payload, callback)
+    } else {
+      let response = { jsonrpc: "2.0", id: payload.id };
+      let isString = typeof payload == 'string'
+      var method = isString ? payload : payload.method
+      var result = ''
+      switch (method) {
+        case "eth_accounts":
+        case "cfx_accounts":
+          result = this.eth_accounts();
+          response.result = result
+          return isString ? result : response
+        case "eth_coinbase":
+        case "cfx_coinbase":
+          result = this.eth_coinbase();
+          response.result = result
+          return isString ? result : response
+        case "net_version":
+          result = this.net_version();
+          response.result = result
+          return isString ? result : response;
+        case "eth_chainId":
+        case "cfx_chainId":
+          result = this.eth_chainId();
+          response.result = result
+          return isString ? result : response
+        default:
+          let msg = `Trust does not support calling ${payload.method} synchronously without a callback. Please provide a callback parameter to call ${payload.method} asynchronously.`
+          if (this.isDebug) {
+            console.log(msg)
+          }
+          throw new ProviderRpcError(4200, msg);
+      }
     }
-    return response;
   }
+
 
   /**
    * @deprecated Use request() method instead.
@@ -194,6 +211,9 @@ class TrustWeb3Provider extends EventEmitter {
         case "eth_newPendingTransactionFilter":
         case "eth_uninstallFilter":
         case "eth_subscribe":
+          if (this.isDebug) {
+            console.log(`Trust does not support calling ${payload.method}. Please use your own solution`)
+          }
           throw new ProviderRpcError(
             4200,
             `Trust does not support calling ${payload.method}. Please use your own solution`
@@ -233,32 +253,38 @@ class TrustWeb3Provider extends EventEmitter {
   }
 
   net_version() {
-    return this.chainId.toString(10) || null;
+    return this.networkVersion || null;
   }
 
   eth_chainId() {
-    return "0x" + this.chainId.toString(16);
+    return this.chainId;
   }
 
   eth_sign(payload) {
+    if (this.isDebug) {
+      console.log('eth_sign ' + JSON.stringify(payload))
+    }
     const buffer = this.messageToBuffer(payload.params[1]);
     const hex = this.bufferToHex(buffer);
     if (isUtf8(buffer)) {
-      this.postMessage("signPersonalMessage", payload.id, { data: hex });
+      this.postMessage("signPersonalMessage", payload.id, { raw: payload.params[1], data: hex });
     } else {
-      this.postMessage("signMessage", payload.id, { data: hex });
+      this.postMessage("signMessage", payload.id, { raw: payload.params[1], data: hex });
     }
   }
 
   personal_sign(payload) {
+    if (this.isDebug) {
+      console.log('personal_sign ' + JSON.stringify(payload))
+    }
     const message = payload.params[0];
     const buffer = this.messageToBuffer(message);
     if (buffer.length === 0) {
       // hex it
       const hex = this.bufferToHex(message);
-      this.postMessage("signPersonalMessage", payload.id, { data: hex });
+      this.postMessage("signPersonalMessage", payload.id, { raw: message, data: hex });
     } else {
-      this.postMessage("signPersonalMessage", payload.id, { data: message });
+      this.postMessage("signPersonalMessage", payload.id, { raw: message, data: message });
     }
   }
 
@@ -397,7 +423,7 @@ class TrustWeb3Provider extends EventEmitter {
   }
 
   bufferToHex(buf) {
-    return "0x" + Buffer.from(buf).toString("hex");
+    return "0x" + Buffer.from(buf, 'utf-8').toString("hex");
   }
 
   genId() {
