@@ -26,6 +26,9 @@ class RPCServer {
   }
 
   call(payload) {
+    if(!payload.jsonrpc) {
+      payload.jsonrpc = '2.0'
+    }
     return fetch(this.rpcUrl, {
       method: "POST",
       headers: {

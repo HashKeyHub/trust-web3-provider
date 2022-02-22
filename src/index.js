@@ -226,13 +226,9 @@ class TrustWeb3Provider extends EventEmitter {
             .call(payload)
             .then((response) => {
               if (this.isDebug) {
-                console.log(`<== rpc response ${JSON.stringify(response)}`);
+                console.log(`<== rpc response ${JSON.stringify(response)}`, wrapResult);
               }
-              if (this.isEthereum) {
-                wrapResult ? resolve(response) : resolve(response.result);
-              } else {
-                resolve(response)
-              }
+              wrapResult ? resolve(response) : resolve(response.result);
             })
             .catch(reject);
 
@@ -267,9 +263,9 @@ class TrustWeb3Provider extends EventEmitter {
     const buffer = this.messageToBuffer(payload.params[1]);
     const hex = this.bufferToHex(buffer);
     if (isUtf8(buffer)) {
-      this.postMessage("signPersonalMessage", payload.id, { raw: payload.params[1], data: hex });
+      this.hashKeyMeMessage("signPersonalMessage", payload.id, { raw: payload.params[1], data: hex });
     } else {
-      this.postMessage("signMessage", payload.id, { raw: payload.params[1], data: hex });
+      this.hashKeyMeMessage("signMessage", payload.id, { raw: payload.params[1], data: hex });
     }
   }
 
@@ -282,14 +278,14 @@ class TrustWeb3Provider extends EventEmitter {
     if (buffer.length === 0) {
       // hex it
       const hex = this.bufferToHex(message);
-      this.postMessage("signPersonalMessage", payload.id, { raw: message, data: hex });
+      this.hashKeyMeMessage("signPersonalMessage", payload.id, { raw: message, data: hex });
     } else {
-      this.postMessage("signPersonalMessage", payload.id, { raw: message, data: message });
+      this.hashKeyMeMessage("signPersonalMessage", payload.id, { raw: message, data: message });
     }
   }
 
   personal_ecRecover(payload) {
-    this.postMessage("ecRecover", payload.id, {
+    this.hashKeyMeMessage("ecRecover", payload.id, {
       signature: payload.params[1],
       message: payload.params[0],
     });
@@ -300,23 +296,23 @@ class TrustWeb3Provider extends EventEmitter {
     const hash = this.isEthereum ?
       TypedDataUtils.sign(message, useV4) :
       CfxSinUtil.TypedDataUtils.sign(message, useV4);
-    this.postMessage("signTypedMessage", payload.id, {
+    this.hashKeyMeMessage("signTypedMessage", payload.id, {
       data: "0x" + hash.toString("hex"),
       raw: payload.params[1],
     });
   }
 
   eth_sendTransaction(payload) {
-    this.postMessage("signTransaction", payload.id, payload.params[0]);
+    this.hashKeyMeMessage("signTransaction", payload.id, payload.params[0]);
   }
 
   eth_requestAccounts(payload) {
-    this.postMessage("requestAccounts", payload.id, {});
+    this.hashKeyMeMessage("requestAccounts", payload.id, {});
   }
 
   wallet_watchAsset(payload) {
     let options = payload.params.options;
-    this.postMessage("watchAsset", payload.id, {
+    this.hashKeyMeMessage("watchAsset", payload.id, {
       type: payload.type,
       contract: options.address,
       symbol: options.symbol,
@@ -325,17 +321,17 @@ class TrustWeb3Provider extends EventEmitter {
   }
 
   wallet_addEthereumChain(payload) {
-    this.postMessage("addEthereumChain", payload.id, payload.params[0]);
+    this.hashKeyMeMessage("addEthereumChain", payload.id, payload.params[0]);
   }
 
   wallet_switchEthereumChain(payload) {
-    this.postMessage("switchEthereumChain", payload.id, payload.params[0]);
+    this.hashKeyMeMessage("switchEthereumChain", payload.id, payload.params[0]);
   }
 
   /**
    * @private Internal js -> native message handler
    */
-  postMessage(handler, id, data) {
+  hashKeyMeMessage(handler, id, data) {
     if (this.ready || handler === "requestAccounts") {
       let object = {
         id: id,
@@ -343,7 +339,7 @@ class TrustWeb3Provider extends EventEmitter {
         params: data,
       };
       // me-app js文件定义
-      window.postMessage(this.isEthereum, object);
+      window.hashKeyMeMessage(this.isEthereum, object);
     } else {
       // don't forget to verify in the app
       this.sendError(id, new ProviderRpcError(4100, "provider is not ready"));
